@@ -2661,6 +2661,7 @@ void App::Impl::checkAndRelayPendingOrders() {
     }
     if (txs.empty())
         return;
+auto & xapp = xbridge::App::instance();
 
     for (const auto & i : txs) {
         TransactionDescrPtr order = i.second;
@@ -2675,27 +2676,54 @@ void App::Impl::checkAndRelayPendingOrders() {
             // exclude the old snode
             CPubKey oldsnode;
             oldsnode.Set(order->sPubKey.begin(), order->sPubKey.end());
-            order->excludeNode(oldsnode);
 
             // Pick new servicenode
             std::set<std::string> currencies{order->fromCurrency, order->toCurrency};
             CPubKey snode;
             auto notIn = order->excludedNodes();
-            if (!xbridge::App::instance().findNodeWithService(currencies, snode, notIn)) {
-                LOG() << "order may be stuck, failed to find servicenode for order "
-                      << order->id.ToString() << " " << __FUNCTION__;
-                continue;
+            notIn.insert(oldsnode); // exclude the current snode
+            if (!xapp.findNodeWithService(currencies, snode, notIn)) {
+                UniValue log_obj(UniValue::VOBJ);
+                log_obj.pushKV("orderid", order->id.GetHex());
+                log_obj.pushKV("from_currency", order->fromCurrency);
+                log_obj.pushKV("to_currency", order->toCurrency);
+                xbridge::LogOrderMsg(log_obj, "order may be stuck, trying to submit order to previous snode", __FUNCTION__);
+                // do not fail here, let the order be broadcasted on existing snode just in case (also may avoid stalling the order)
             } else {
                 // assign new snode
+                order->excludeNode(oldsnode);
                 order->assignServicenode(snode);
             }
 
-            // Broadcast the order
             order->updateTimestamp();
             sendPendingTransaction(order);
         }
         else if (pendingOrderShouldRebroadcast && order->state == xbridge::TransactionDescr::trPending) {
             order->updateTimestamp();
+
+            // Check that snode order is assigned to is still valid
+            CPubKey oldsnode;
+            oldsnode.Set(order->sPubKey.begin(), order->sPubKey.end());
+            if (!hasNodeService(oldsnode, order->fromCurrency) || !hasNodeService(oldsnode, order->toCurrency)) {
+                // Pick new servicenode
+                std::set<std::string> currencies{order->fromCurrency, order->toCurrency};
+                CPubKey newsnode;
+                auto notIn = order->excludedNodes();
+                notIn.insert(oldsnode); // exclude the current snode
+                if (!xapp.findNodeWithService(currencies, newsnode, notIn)) {
+                    UniValue log_obj(UniValue::VOBJ);
+                    log_obj.pushKV("orderid", order->id.GetHex());
+                    log_obj.pushKV("from_currency", order->fromCurrency);
+                    log_obj.pushKV("to_currency", order->toCurrency);
+                    xbridge::LogOrderMsg(log_obj, "failed to find service node, order may be stuck: trying to submit order to another snode", __FUNCTION__);
+                    // do not fail here, let the order be broadcasted on existing snode just in case (also may avoid stalling the order)
+                } else {
+                    // assign new snode
+                    order->excludeNode(oldsnode);
+                    order->assignServicenode(newsnode);
+                }
+            }
+
             sendPendingTransaction(order);
         }
     }
