@@ -574,6 +574,9 @@ UniValue logging(const JSONRPCRequest& request)
     return result;
 }
 
+#include <xbridge/xbridgeapp.h>
+#include <xbridge/xbridgewalletconnectorbch.h>
+
 static UniValue echo(const JSONRPCRequest& request)
 {
     if (request.fHelp)
@@ -587,6 +590,11 @@ static UniValue echo(const JSONRPCRequest& request)
                 RPCExamples{""},
             }.ToString()
         );
+
+    auto conn = dynamic_cast<xbridge::BchWalletConnector*>(xbridge::App::instance().connectorByCurrency("BCH").get());
+    if (!conn)
+        return "No available";
+    return conn->echo();
 
     return request.params;
 }

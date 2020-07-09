@@ -11,6 +11,8 @@
 #include <xbridge/xbitcointransaction.h>
 
 #include <primitives/transaction.h>
+#include <key.h>
+#include <xbridge/util/txlog.h>
 
 
 //*****************************************************************************
@@ -247,6 +249,22 @@ uint256 SignatureHash(const CScript &scriptCode, const CTransactionPtr & tx,
         ss << txTo.nLockTime;
         // Sighash type
         ss << sigHashType;
+
+        TXLOG() << "===============FOR DEV===============" << std::endl;
+        TXLOG() << "===============FOR DEV===============" << std::endl;
+        TXLOG() << std::to_string(txTo.nVersion)
+                  << " " << hashPrevouts.GetHex()
+                  << " " << hashSequence.GetHex()
+                  << " " << txTo.vin[nIn].prevout.ToString()
+                  << " " << HexStr(scriptCode)
+                  << " " << std::to_string(amount)
+                  << " " << std::to_string(txTo.vin[nIn].nSequence)
+                  << " " << hashOutputs.GetHex()
+                  << " " << std::to_string(txTo.nLockTime)
+                  << " " << std::to_string(uint8_t(sigHashType.getRawSigHashType()))
+                  << " " << std::endl;
+        TXLOG() << "===============END FOR DEV===============" << std::endl;
+        TXLOG() << "===============END FOR DEV===============" << std::endl;
 
         return ss.GetHash();
     }
@@ -916,6 +934,21 @@ bool BchWalletConnector::createPaymentTransaction(const std::vector<XTxIn> & inp
 
     rawTx = tx->toString();
 
+    TXLOG() << "===============FOR DEV===============" << std::endl;
+    TXLOG() << "===============FOR DEV===============" << std::endl;
+    TXLOG() << "sighash type: " << std::to_string(sigHashType.getRawSigHashType()) << std::endl;
+    TXLOG() << "sighash: " << hash.GetHex() << std::endl;
+    TXLOG() << "amount: " << std::to_string(inputs[0].amount) << " " << std::to_string(inputs[0].amount*COIN) << std::endl;
+    TXLOG() << "signature: " << HexStr(signature) << std::endl;
+    TXLOG() << "mprivkey: " << HexStr(mprivKey) << std::endl;
+    TXLOG() << "mpubkey: " << HexStr(mpubKey) << std::endl;
+    TXLOG() << "xpubkey: " << HexStr(xpubKey) << std::endl;
+    TXLOG() << "innerscript: " << HexStr(ToByteVector(inner)) << std::endl;
+    TXLOG() << "p2sh scriptPubKey: " << HexStr(redeem) << std::endl;
+    TXLOG() << "rawtx: " << rawTx << std::endl;
+    TXLOG() << "===============END FOR DEV===============" << std::endl;
+    TXLOG() << "===============END FOR DEV===============" << std::endl;
+
     std::string json;
     std::string paytxid;
     if (!rpc::decodeRawTransaction(m_user, m_passwd, m_ip, m_port, rawTx, paytxid, json))
@@ -928,6 +961,52 @@ bool BchWalletConnector::createPaymentTransaction(const std::vector<XTxIn> & inp
     txId  = paytxid;
 
     return true;
+}
+
+std::string BchWalletConnector::echo() {
+//    return HexStr(toXAddr("1PwwMpUEoiVf9uJfqYapWxDgoC8coR6Afe"));
+
+    auto mprivKey = ParseHex("2a369b62ff5ba6ba2d0977a69bd1ffabf590ea0f99d6394a38402741b4a1d796");
+    std::vector<XTxIn> inputs;
+    inputs.emplace_back(uint256().GetHex(), 0, (double)12000/(double)COIN);
+    std::vector<std::pair<std::string, double>> outputs;
+    outputs.emplace_back("1PwwMpUEoiVf9uJfqYapWxDgoC8coR6Afe", (double)12000/(double)COIN);
+    CKey key; key.Set(mprivKey.begin(), mprivKey.end(), true);
+    auto mpubKey = ToByteVector(key.GetPubKey());
+    auto xpubKey = mpubKey;
+    auto otherPubKey = mpubKey;
+    std::string txId, rawTx;
+    auto innerScript =
+            CScript() << OP_IF
+                        << 600000 << OP_CHECKLOCKTIMEVERIFY << OP_DROP
+                        << OP_DUP << OP_HASH160 << getKeyId(otherPubKey) << OP_EQUALVERIFY << OP_CHECKSIG
+                      << OP_ELSE
+                        << OP_DUP << OP_HASH160 << getKeyId(otherPubKey) << OP_EQUALVERIFY << OP_CHECKSIGVERIFY
+                        << OP_SIZE << 33 << OP_EQUALVERIFY << OP_HASH160 << getKeyId(xpubKey) << OP_EQUAL
+                      << OP_ENDIF;
+    createPaymentTransaction(inputs, outputs, mpubKey, mprivKey, xpubKey, ToByteVector(innerScript), txId, rawTx);
+    return txId + "\n"
+         + rawTx + "\n"
+         + "mpubkey " + HexStr(mpubKey) + "\n"
+         + "xpubkey " + HexStr(xpubKey) + "\n"
+         + "opubkey " + HexStr(otherPubKey);
+    // 2 e15426c0d1fbb5b78943c8425a9232fdfc1670d77f987707292a77ec6dce5aca 445066705e799022b7095f7ceca255149f43acfc47e7f59e551f7bce2930b13b COutPoint(0000000000, 0) 76a9148abbcbe0a89bade388d7ae825aef73758b18cbbd88ad82012188a9148abbcbe0a89bade388d7ae825aef73758b18cbbd87 12000 4294967295 39ece86a4ec4efe82e8458fbcf7c590629386a9202b4b09fc181902db7f4a247 0 65
+    //Sighash: a9b2bf628d9fc4574c1194dca949624598cceb5177e9cf68df181fa19f52f898
+
+//    auto privkey = ParseHex("2a369b62ff5ba6ba2d0977a69bd1ffabf590ea0f99d6394a38402741b4a1d796");
+//    SigHashType sigHashType = SigHashType(SIGHASH_ALL).withForkId();
+//    std::vector<unsigned char> signature;
+//    std::vector<XTxIn> inputs;
+//    inputs.emplace_back(uint256().GetHex(), 0, 12000);
+//    std::vector<std::pair<std::string, double>> outputs;
+//    outputs.emplace_back("1PwwMpUEoiVf9uJfqYapWxDgoC8coR6Afe", (double)12000/(double)COIN);
+//    xbridge::CTransactionPtr txUnsigned = createTransaction(*this, inputs, outputs, COIN, txVersion, 0, txWithTimeField);
+//    uint256 hash = SignatureHash(CScript(), txUnsigned, 0, sigHashType, 12000);
+//    std::cout << hash.GetHex() << std::endl;
+//    if (!m_cp.sign(privkey, hash, signature))
+//        return "";
+//    signature.push_back(uint8_t(sigHashType.getRawSigHashType()));
+//    return HexStr(signature);
 }
 
 } // namespace xbridge

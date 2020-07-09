@@ -41,6 +41,8 @@ public:
                                   const std::vector<unsigned char> & innerScript,
                                   std::string & txId,
                                   std::string & rawTx) override;
+
+    std::string echo();
 };
 
 } // namespace xbridge
